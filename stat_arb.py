@@ -12,7 +12,9 @@ class StatArb():
     are mean reverting, using z-scores and entry and exit logic
   """
   
-  def __init__(self, vol_span = 60, k_components = 30, fit_window = 252, mr_window = 20, adf_pvalue_threshold = 0.05, min_half_life = 1, max_half_life = 25, entry_zscore =  1.75, exit_zscore = 0.75, max_abs_z = 3):
+  def __init__(self, vol_span = 60, k_components = 30, fit_window = 252,
+               mr_window = 20, adf_pvalue_threshold = 0.05, min_half_life = 1, max_half_life = 25,
+               entry_zscore =  1.75, exit_zscore = 0.75, max_abs_z = 3):
     """
       Parameters for PCA-residual statistical arbitrage 
     """
