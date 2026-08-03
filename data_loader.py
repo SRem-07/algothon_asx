@@ -45,7 +45,8 @@ def get_asx50_data(start_date = "2012-01-01", end_date = "2026-06-01"):
 # Gather ASX market data
 def get_asx_market_data(start_date = "2012-01-01", end_date = "2026-06-01"):
   """
-    Get data on the key market indicies. Dates can be overrided when function is called
+    Get data on the key market indicies. Dates can be overrided when function is called. 
+    Can use as a proxy for ASX futures as the spot-futures basis is usually small and slow-moving.
 
     ^AXTL = ASX 20 Spot Index
     ^ALFI = ASX 50 Spot Index
@@ -53,42 +54,14 @@ def get_asx_market_data(start_date = "2012-01-01", end_date = "2026-06-01"):
   """
   
   # List of tickers
-  market_tickers = ["^AXTL, ^ALFI, ^AXJO"]
+  market_tickers = ["^AXTL", "^ALFI", "^AXJO"]
   
   # Load data, only adjusted close price
   data = yf.download(tickers=market_tickers,
                      start=start_date, end=end_date, 
                      auto_adjust=True)['Close']
   
-  # Rename columns to remove 'Close' prefix
-  data.columns = [col for col in data.columns]
-  
   return data
-
-# Gather ASX futures data
-def get_asx_futures_data(start_date = "2012-01-01", end_date = "2026-06-01"):
-  """
-    Get ASX 200 futures data
-    
-    AP=F = ASX 200 Futures (ASX 300 Futures Continuous Contract on yfinance)
-  """
-  
-  futures_ticker = "AP=F"
-  
-  # Load data, only adjusted close price
-  data = yf.download(tickers=futures_ticker,
-                     start=start_date, end=end_date, 
-                     auto_adjust=True)['Close']
-  
-  # Rename columns to remove 'Close' prefix
-  data.columns = [col for col in data.columns]
-  
-  return data
-  
-  
-
-
-
 
 # General function to gather data from yfinance
 def get_market_data(tickers, start_date = "2012-01-01", end_date = "2026-06-01"):
@@ -100,8 +73,5 @@ def get_market_data(tickers, start_date = "2012-01-01", end_date = "2026-06-01")
   data = yf.download(tickers=tickers,
                      start=start_date, end=end_date, 
                      auto_adjust=True)['Close']
-  
-  # Rename columns to remove 'Close' prefix
-  data.columns = [col for col in data.columns]
   
   return data
