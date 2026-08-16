@@ -1,6 +1,12 @@
 # algothon_asx
 Application of 2026 SIG Algothon strategy and code to the ASX.
 
+This project incorporates a PCA statistical arbitrage strategy, a momentum trading strategy, all
+combining into a risk engine which utilises a Hidden Markov Model (HMM) to size positions and to allocate
+capital between strategies, along with beta hedging of the overall book. 
+
+This project was made between myself (SRem-07) and PhoenixBlazer(https://github.com/phoenixblazer)
+
 ## Strategy 1: PCA Statistical Arbitrage
 
 A cross-sectional mean-reversion strategy on the ASX50. Common (market/sector) risk is
@@ -22,7 +28,7 @@ PCA is fit on the standardised return matrix $Z$ (days $\times$ stocks). Rather 
 the number of components $k$ up front, $k$ is chosen as the smallest number of components
 whose cumulative explained variance clears a target threshold $\tau$ (default 55%):
 
-$$k = \min\left\{ k : \sum_{j=1}^{k} \lambda_j \Big/ \sum_{j=1}^{N} \lambda_j \geq \tau \right\}$$
+$$k = \min\left\lbrace k : \sum_{j=1}^{k} \lambda_j \Big/ \sum_{j=1}^{N} \lambda_j \geq \tau \right\rbrace$$
 
 where $\lambda_j$ are the PCA eigenvalues. A fixed $k$ risks either under-fitting genuine
 common structure or over-fitting sample noise as the number of names or the fit window
@@ -95,11 +101,6 @@ HMM that ultimately sizes positions — see Roadmap below.
 
 ### Backtest
 
-Walk-forward backtest on the ASX50, 2013–2026, rebalanced every 5 trading days, 5bps
-transaction costs, capped at 15% gross exposure per name (this cap stands in for the
-position sizing the HMM stage will eventually own — see Roadmap). This is the **raw OU
-signal in isolation**: no momentum blend, no beta hedge, no HMM sizing yet.
-
 ![PCA Statistical Arbitrage backtest](backtest/results/stat_arb_backtest.png)
 
 | Metric | Value |
@@ -109,13 +110,7 @@ signal in isolation**: no momentum blend, no beta hedge, no HMM sizing yet.
 | Sharpe | -0.26 |
 | Max drawdown | -30.7% |
 
-Volatility is an order of magnitude below the ASX50 benchmark and the equity curve stays
-largely uncorrelated with it, which is the market-neutrality the PCA residual construction
-is meant to deliver. The raw signal isn't profitable on its own yet over this sample, which
-is a reasonable starting point rather than a final read — the signal is also fairly sparse
-(often only a handful of the 43-stock universe pass the ADF/half-life gate at any given
-rebalance), which is exactly what the walk-forward hyperparameter validator in
-[backtest/walk_forward_validator.py](backtest/walk_forward_validator.py) is for.
+<!-- TODO: discussion of results, limitations, and next steps goes here -->
 
 ### Backtesting tools
 
