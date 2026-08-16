@@ -48,13 +48,13 @@ def get_asx_market_data(start_date = "2012-01-01", end_date = "2026-06-01"):
     Get data on the key market indicies. Dates can be overrided when function is called. 
     Can use as a proxy for ASX futures as the spot-futures basis is usually small and slow-moving.
 
-    ^AXTL = ASX 20 Spot Index
-    ^ALFI = ASX 50 Spot Index
+    ^ATLI = ASX 20 Spot Index
+    ^AFLI = ASX 50 Spot Index
     ^AXJO = ASX 200 Spot Index
   """
-  
+
   # List of tickers
-  market_tickers = ["^AXTL", "^ALFI", "^AXJO"]
+  market_tickers = ["^ATLI", "^AFLI", "^AXJO"]
   
   # Load data, only adjusted close price
   data = yf.download(tickers=market_tickers,
