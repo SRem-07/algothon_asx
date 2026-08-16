@@ -180,7 +180,7 @@ $R^2$ a clean signal-to-noise measure for compounding trends.
 
 The final per-stock conviction is the product of the two, clipped to $[-1, 1]$:
 
-$$\text{conviction}_i = \text{clip}\left(\text{rank\_conv}_i \cdot R^2_i,\ -1,\ 1\right)$$
+$$\text{rank\_conv}_i = \text{clip}\left(\text{rank\_conv}_i \cdot R^2_i,\ -1,\ 1\right)$$
 
 Because the two terms multiply, a name has to be both in the tail of the cross-section
 *and* on a clean trend to earn a meaningful position — either condition weakening damps
