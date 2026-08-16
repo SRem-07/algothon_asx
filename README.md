@@ -160,7 +160,7 @@ the most conviction, and names sitting on the edge of the quantile boundary get 
 down toward zero. This preserves the sign information of the ranking while smoothing the
 step function that a naive equal-weight top/bottom split would produce:
 
-$$c^{\text{rank}}_i = \begin{cases} 1 - \dfrac{\text{rank}_i}{n_{+}} & i \text{ in top quantile} \\[6pt] -\dfrac{n_{-} - \text{rank}^{\text{asc}}_i}{n_{-}} & i \text{ in bottom quantile} \\[6pt] 0 & \text{otherwise} \end{cases}$$
+$$c^{\text{rank}}_i = \begin{cases} 1 - \dfrac{\text{rank}_i}{n_{+}} & i \text{ in top quantile} \\ -\dfrac{n_{-} - \text{rank}^{\text{asc}}_i}{n_{-}} & i \text{ in bottom quantile} \\ 0 & \text{otherwise} \end{cases}$$
 
 where $n_{+}$ and $n_{-}$ are the sizes of the top `top_pct` (long) and bottom
 `bottom_pct` (short) quantiles respectively, $\text{rank}_i$ is the descending rank
