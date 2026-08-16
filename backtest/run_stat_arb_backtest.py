@@ -3,26 +3,26 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_loader import get_asx50_data, get_asx_market_data
+from data_loader import get_asx200_data, get_asx_market_data
 from stat_arb import StatArb
 from backtest.backtester import Backtester
 
 
 def main():
-  price_data = get_asx50_data()
+  price_data = get_asx200_data()
   market_data = get_asx_market_data()
 
-  # Drop tickers without a full price history over the sample (e.g. names
-  # listed after the start date). A more thorough approach would only
-  # require full history within each rolling fit window rather than over
-  # the whole sample, letting late listings join partway through - worth
-  # revisiting once the universe handling matters more.
-  price_data = price_data.dropna(axis=1)
+  # Keep any name with at least 60% of the full sample - late listings still
+  # get included from the point their history is long enough for the fit
+  # window. The stat-arb signal itself drops names without full history in
+  # each individual fit window, so partial-history names contribute only
+  # from the point they become usable rather than being excluded outright.
+  price_data = price_data.dropna(axis=1, thresh=int(len(price_data) * 0.6))
 
   strategy = StatArb()
   backtester = Backtester(
     price_data, strategy, market_data,
-    rebalance_freq=5, min_history=270, transaction_cost_bps=5
+    rebalance_freq=10, min_history=270, transaction_cost_bps=5
   )
 
   results = backtester.run()

@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
 from statsmodels.tsa.stattools import adfuller
 
 
@@ -12,19 +11,20 @@ class StatArb():
     are mean reverting, using z-scores and entry and exit logic
   """
 
-  def __init__(self, vol_span = 60, k_components = None, variance_threshold = 0.55, fit_window = 252,
-               mr_window = 60, adf_pvalue_threshold = 0.05, min_half_life = 1, max_half_life = 25,
+  def __init__(self, vol_span = 60, k_components = None, variance_threshold = 0.70, fit_window = 252,
+               mr_window = 90, adf_pvalue_threshold = 0.01, min_half_life = 1, max_half_life = 25,
                entry_zscore =  1.75, exit_zscore = 0.75, max_abs_z = 3):
     """
       Parameters for PCA-residual statistical arbitrage
     """
-    # EWMA span (days) used to standardise returns before factor work.
-    # Reserved for a future upgrade to _standardise_returns (EWMA vol-scaling
-    # instead of a static full-window StandardScaler) - not wired in yet.
+    # EWMA span (days) used to standardise returns before PCA. Weights recent
+    # observations more heavily than distant ones so the standardised returns
+    # sit at roughly unit variance around the *current* vol regime rather
+    # than the average of the whole fit window.
     self.vol_span = vol_span
 
     # Factors stripped out before looking for reversion. If None, chosen
-    # dynamically each fit via cumulative explained variance 
+    # dynamically each fit via cumulative explained variance
     self.k_components = k_components
 
     # Cumulative explained-variance target used when k_components is None
@@ -48,27 +48,57 @@ class StatArb():
     self.exit_zscore = exit_zscore
     self.max_abs_z = max_abs_z
 
-    # Scalar object
-    self.scalar = StandardScaler()
-
 
   def _standardise_returns(self, price_data):
     """
-      Standardise trailing fit_window days of log returns to feed into PCA model
-    """
+      Standardise trailing fit_window days of log returns to feed into the
+      PCA model.
 
+      Scaling is done via an exponentially-weighted moving average (EWMA)
+      mean and volatility with span self.vol_span:
+
+        mu_t     = (1 - alpha) * mu_{t-1}    + alpha * r_t
+        var_t    = (1 - alpha) * var_{t-1}   + alpha * (r_t - mu_t)^2
+        z_t      = (r_t - mu_t) / sqrt(var_t)
+
+      where alpha = 2 / (vol_span + 1). Recent observations get more
+      weight than distant ones, so the standardised series is
+      approximately unit-variance around the *current* vol regime rather
+      than the average of the whole fit window. This matters most when a
+      regime shift sits inside the window - e.g. Feb-Mar 2020, where a
+      static full-window scaler would leave post-shock returns
+      systematically over-scaled and pre-shock returns under-scaled,
+      distorting the covariance matrix that PCA is about to decompose.
+
+      Stocks without full price history over the fit window are dropped
+      here rather than propagating NaNs into PCA - the resulting universe
+      per fit is dynamic, which is what walk-forward needs when the
+      universe includes names that IPO'd mid-sample.
+    """
     # Need fit_window + 1 price rows to get fit_window log returns.
     price_data_df = price_data.iloc[-(self.fit_window + 1):, :]
 
-    # Calculate log returns
-    log_returns_df = np.log(price_data_df / price_data_df.shift(1))
-    log_returns_df = log_returns_df.dropna() # Drop the first row as will be NaN
+    # Drop names missing any price in the window - PCA can't take NaNs
+    price_data_df = price_data_df.dropna(axis=1)
 
-    # Standardise returns
-    standardised_returns = pd.DataFrame(
-      self.scalar.fit_transform(log_returns_df),
-      index = log_returns_df.index, columns = log_returns_df.columns
-    )
+    # Calculate log returns
+    log_returns_df = np.log(price_data_df / price_data_df.shift(1)).dropna()
+
+    # EWMA mean and volatility - see docstring for the recursion
+    ewma_mean = log_returns_df.ewm(span=self.vol_span, adjust=False).mean()
+    ewma_std = log_returns_df.ewm(span=self.vol_span, adjust=False).std()
+
+    # Drop illiquid names whose recursive EWMA std collapses to zero
+    # anywhere in the window - a run of forward-filled prices gives many
+    # exactly-zero daily returns, and the resulting 0/0 in the division
+    # below would inject NaNs into every row (not just that column) 
+    active_cols = ewma_std.min() > 1e-8
+    log_returns_df = log_returns_df.loc[:, active_cols]
+    ewma_mean = ewma_mean.loc[:, active_cols]
+    ewma_std = ewma_std.loc[:, active_cols]
+
+    # First row is NaN because a one-sample EWMA std is undefined; drop it
+    standardised_returns = ((log_returns_df - ewma_mean) / ewma_std).dropna()
 
     return standardised_returns
 
@@ -86,15 +116,6 @@ class StatArb():
 
       If self.k_components was set explicitly in __init__, skip all of this
       and just return it (manual override).
-
-      Steps:
-        1. Fit an uncapped PCA (n_components=None -> min(n_samples, n_features))
-           on std_returns_df, purely to inspect the eigenvalue spectrum.
-        2. full_pca.explained_variance_ratio_ gives one value per component,
-           summing to 1 - the fraction of total variance each PC explains.
-        3. Take the cumulative sum of that array.
-        4. Return the smallest k such that cumulative[k-1] >= self.variance_threshold
-           (i.e. the fewest components needed to reach the target).
     """
     if self.k_components is not None:
       return self.k_components
@@ -150,10 +171,6 @@ class StatArb():
         a, b, resid_std
       where resid_std is the std of the regression residuals zeta_t.
       Use ddof=2 when computing resid_std (two parameters estimated: a, b).
-
-      Implementation options (pick one):
-        - np.polyfit(x_lag, x_now, 1) -> returns (slope, intercept) i.e. (b, a)
-        - scipy.stats.linregress(x_lag, x_now) -> .slope, .intercept directly
     """
     
     # Lagged and current values to use for model
@@ -230,17 +247,6 @@ class StatArb():
       (a synthetic price series), not the raw daily residual. Daily returns
       are stationary by construction, so testing them directly for a unit
       root doesn't tell you anything about mean-reversion.
-
-      Steps per stock column:
-        1. window = daily_residuals[stock] over the trailing mr_window
-        2. cumulative = window.cumsum()
-        3. p_value = adfuller(cumulative, regression='c')[1]
-        4. ou_params = self._fit_ou_parameters(cumulative)
-           - if None (no valid OU solution), the stock fails the gate
-        5. passes_gate = (p_value <= self.adf_pvalue_threshold) and
-                         (self.min_half_life <= half_life <= self.max_half_life)
-        6. Record p_value, half_life, s_score, passes_gate for the stock
-           (use NaN for half_life/s_score when ou_params is None)
 
       Returns a DataFrame indexed by stock ticker with columns:
         ['p_value', 'half_life', 's_score', 'passes_gate']

@@ -1,3 +1,6 @@
+from io import StringIO
+
+import requests
 import yfinance as yf
 import pandas as pd
 
@@ -41,6 +44,47 @@ def get_asx50_data(start_date = "2012-01-01", end_date = "2026-06-01"):
   return data
   
   
+
+def get_asx200_tickers():
+  """
+    Returns ASX 200 tickers as a list, fetched from the current constituents
+    table on Wikipedia. Requires network access.
+  """
+  url = "https://en.wikipedia.org/wiki/S%26P/ASX_200"
+  headers = {"User-Agent": "Mozilla/5.0 (compatible; algothon_asx/1.0)"}
+  response = requests.get(url, headers=headers, timeout=30)
+  response.raise_for_status()
+
+  tables = pd.read_html(StringIO(response.text))
+
+  for table in tables:
+    for col in ("Code", "Ticker", "Symbol", "ASX code"):
+      if col in table.columns:
+        codes = table[col].astype(str).str.strip().tolist()
+        return [f"{code}.AX" for code in codes if code and code.lower() != "nan"]
+
+  raise ValueError("Could not find ASX200 constituents table on Wikipedia")
+
+
+# Gather ASX 200 market data
+def get_asx200_data(start_date = "2012-01-01", end_date = "2026-06-01"):
+  """
+    Call get_asx200_tickers and then download data for ASX200.
+    Broader universe than get_asx50_data - required by the stat-arb strategy,
+    which needs enough cross-sectional breadth for the residual-reversion
+    ensemble to actually diversify.
+  """
+  asx200_tickers = get_asx200_tickers()
+
+  data = yf.download(tickers=asx200_tickers,
+                     start=start_date, end=end_date,
+                     auto_adjust=True)['Close']
+
+  data.columns = [col for col in data.columns]
+
+  return data
+
+
 
 # Gather ASX market data
 def get_asx_market_data(start_date = "2012-01-01", end_date = "2026-06-01"):

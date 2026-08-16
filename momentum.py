@@ -4,138 +4,81 @@ import pandas as pd
 
 class CrossSectionalMomentum():
   """
-    Ranks stocks each rebalance date by trailing total return, skipping the most recent
-    month to avoid short-term reversal (the standard 12-1 formation window). Goes long the
-    top quantile and, optionally, short the bottom quantile, inverse-vol weighting names
-    within each leg. Positions are held constant between rebalances.
+    Cross-sectional momentum on the ASX50, exposed through the same
+    _signal(price_data) -> pd.Series[ticker -> conviction in [-1, 1]]
+    interface as StatArb so the shared Backtester drives either strategy
+    without modification.
+
+    At each call, ranks the universe by trailing (lookback - skip)-day
+    total return, skipping the most recent `skip` days to sidestep the
+    well-documented short-term reversal effect (the classic 12-1 formation
+    window). Only names in the top `top_pct` (long) and bottom `bottom_pct`
+    (short) quantiles receive non-zero conviction; within each leg,
+    conviction ramps linearly from 0 at the quantile boundary to +/- 1 at
+    the tail. Each name's conviction is then scaled by the R^2 of a linear
+    fit of its log price over the formation window - a stock whose price
+    trended smoothly gets more weight than one whose formation return was
+    driven by a single jump.
   """
 
-  def __init__(self, lookback=252, skip=21, rebalance_freq=21,
-               top_pct=0.3, bottom_pct=0.3, long_short=True, vol_span=60):
-    # Trailing window (days) used to compute the momentum score
+  def __init__(self, lookback=252, skip=21, top_pct=0.3, bottom_pct=0.3, long_only=False):
     self.lookback = lookback
-
-    # Most recent days excluded from the score to avoid short-term reversal
     self.skip = skip
-
-    # Days between rebalances
-    self.rebalance_freq = rebalance_freq
-
-    # Fraction of the universe held long / sold short each rebalance
     self.top_pct = top_pct
     self.bottom_pct = bottom_pct
+    self.long_only = long_only
 
-    # If False, only the long leg is traded (useful when shorting isn't available)
-    self.long_short = long_short
+  def _momentum_score(self, price_data):
+    formation_end = price_data.iloc[-1 - self.skip]
+    formation_start = price_data.iloc[-self.lookback]
+    return formation_end / formation_start - 1
 
-    # Trailing window (days) used for inverse-vol weighting within each leg
-    self.vol_span = vol_span
+  def _trend_quality(self, price_data):
+    window = np.log(price_data.iloc[-self.lookback : len(price_data) - self.skip])
+    n = len(window)
+    if n < 3:
+      return pd.Series(0.0, index=price_data.columns)
 
-  def _momentum_scores(self, price_data):
-    """
-      Score(t) = price(t - skip) / price(t - lookback) - 1, i.e. total return over the
-      formation window that ends `skip` days before the rebalance date.
-    """
-    formation_prices = price_data.shift(self.skip)
-    scores = formation_prices / formation_prices.shift(self.lookback - self.skip) - 1
+    x = np.arange(n, dtype=float)
+    x_dev = x - x.mean()
+    y = window.values
+    y_dev = y - np.nanmean(y, axis=0)
 
-    return scores
+    denom_x = np.nansum(x_dev ** 2)
+    slope = np.nansum(x_dev[:, None] * y_dev, axis=0) / denom_x
+    pred_dev = np.outer(x_dev, slope)
 
-  def _leg_weights(self, scores_row, returns_for_vol):
-    """
-      Splits one cross-section of momentum scores into long/short legs and inverse-vol
-      weights names within each leg (falls back to the leg's mean inverse-vol for names
-      with zero/undefined trailing vol).
-    """
-    scores_row = scores_row.dropna()
-    weights = pd.Series(0.0, index=scores_row.index)
-    n = len(scores_row)
+    ss_res = np.nansum((y_dev - pred_dev) ** 2, axis=0)
+    ss_tot = np.nansum(y_dev ** 2, axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+      r2 = 1 - ss_res / ss_tot
+    r2 = np.where(np.isfinite(r2), r2, 0.0)
 
+    return pd.Series(np.clip(r2, 0.0, 1.0), index=window.columns)
+
+  def _signal(self, price_data):
+    if len(price_data) < self.lookback + 1:
+      return pd.Series(0.0, index=price_data.columns)
+
+    scores = self._momentum_score(price_data).dropna()
+    conviction = pd.Series(0.0, index=price_data.columns)
+
+    n = len(scores)
     if n == 0:
-      return weights
+      return conviction
 
-    ranked = scores_row.sort_values(ascending=False)
+    ranked = scores.sort_values(ascending=False)
 
-    n_long = max(1, int(np.ceil(n * self.top_pct)))
-    long_names = ranked.index[:n_long]
-    weights[long_names] = self._inverse_vol_weights(returns_for_vol[long_names])
+    n_top = max(1, int(np.ceil(n * self.top_pct)))
+    top_names = ranked.index[:n_top]
+    conviction.loc[top_names] = np.linspace(1.0, 1.0 / n_top, n_top)
 
-    if self.long_short:
-      n_short = max(1, int(np.ceil(n * self.bottom_pct)))
-      short_names = ranked.index[-n_short:]
-      weights[short_names] = -self._inverse_vol_weights(returns_for_vol[short_names])
+    if not self.long_only:
+      n_bot = max(1, int(np.ceil(n * self.bottom_pct)))
+      bot_names = ranked.index[-n_bot:]
+      conviction.loc[bot_names] = np.linspace(-1.0 / n_bot, -1.0, n_bot)
 
-    return weights
+    trend_r2 = self._trend_quality(price_data).reindex(conviction.index).fillna(0.0)
+    conviction *= trend_r2
 
-  def _inverse_vol_weights(self, returns_window):
-    inv_vol = 1 / returns_window.std()
-    inv_vol = inv_vol.replace([np.inf, -np.inf], np.nan)
-    inv_vol = inv_vol.fillna(inv_vol.mean())
-
-    return inv_vol / inv_vol.sum()
-
-  def generate_weights(self, price_data):
-    """
-      Builds a daily weight matrix (index=dates, columns=tickers). Weights are only
-      recomputed every `rebalance_freq` days and held constant in between.
-    """
-    scores = self._momentum_scores(price_data)
-    daily_returns = price_data.pct_change()
-
-    rebalance_dates = scores.index[self.lookback::self.rebalance_freq]
-    rebalance_weights = pd.DataFrame(index=rebalance_dates, columns=price_data.columns, dtype=float)
-
-    for date in rebalance_dates:
-      vol_window = daily_returns.loc[:date].tail(self.vol_span)
-      rebalance_weights.loc[date] = self._leg_weights(scores.loc[date], vol_window)
-
-    weights = rebalance_weights.reindex(price_data.index).ffill().fillna(0.0)
-
-    return weights
-
-  def backtest(self, price_data):
-    """
-      Applies each day's weights to the *next* day's return (avoids lookahead) and
-      returns the daily strategy return series alongside the weight matrix used.
-    """
-    weights = self.generate_weights(price_data)
-    daily_returns = price_data.pct_change()
-
-    strategy_returns = (weights.shift(1) * daily_returns).sum(axis=1)
-
-    return strategy_returns, weights
-
-
-def performance_summary(strategy_returns, periods_per_year=252):
-  """
-    Basic annualised return / vol / Sharpe and max drawdown for a daily return series.
-  """
-  strategy_returns = strategy_returns.dropna()
-  cumulative = (1 + strategy_returns).cumprod()
-
-  annual_return = cumulative.iloc[-1] ** (periods_per_year / len(strategy_returns)) - 1
-  annual_vol = strategy_returns.std() * np.sqrt(periods_per_year)
-  sharpe = annual_return / annual_vol if annual_vol != 0 else np.nan
-
-  running_max = cumulative.cummax()
-  drawdown = cumulative / running_max - 1
-
-  return {
-    "annual_return": annual_return,
-    "annual_vol": annual_vol,
-    "sharpe": sharpe,
-    "max_drawdown": drawdown.min(),
-  }
-
-
-if __name__ == "__main__":
-  from data_loader import get_asx50_data
-
-  price_data = get_asx50_data()
-  # Drop tickers with too much missing history (e.g. late IPOs) to keep the cross-section clean
-  price_data = price_data.dropna(axis=1, thresh=int(len(price_data) * 0.9))
-
-  strategy = CrossSectionalMomentum()
-  strategy_returns, weights = strategy.backtest(price_data)
-
-  print(performance_summary(strategy_returns))
+    return conviction.clip(-1.0, 1.0)
