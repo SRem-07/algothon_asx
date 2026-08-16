@@ -160,7 +160,12 @@ the most conviction, and names sitting on the edge of the quantile boundary get 
 down toward zero. This preserves the sign information of the ranking while smoothing the
 step function that a naive equal-weight top/bottom split would produce:
 
-$$\text{rankconv}_i = \begin{cases} 1 - \dfrac{\text{rank}_i}{n_{\text{top}}} & \text{if } i \in \text{top } \text{top\_pct} \\[6pt] -\dfrac{n_{\text{bot}} - \text{rank}_i^{\text{asc}}}{n_{\text{bot}}} & \text{if } i \in \text{bottom } \text{bottom\_pct} \\[6pt] 0 & \text{otherwise} \end{cases}$$
+$$c^{\text{rank}}_i = \begin{cases} 1 - \dfrac{\text{rank}_i}{n_{+}} & i \text{ in top quantile} \\[6pt] -\dfrac{n_{-} - \text{rank}^{\text{asc}}_i}{n_{-}} & i \text{ in bottom quantile} \\[6pt] 0 & \text{otherwise} \end{cases}$$
+
+where $n_{+}$ and $n_{-}$ are the sizes of the top `top_pct` (long) and bottom
+`bottom_pct` (short) quantiles respectively, $\text{rank}_i$ is the descending rank
+(0 = highest score) for names in the top leg, and $\text{rank}^{\text{asc}}_i$ is
+the ascending rank (0 = lowest score) for names in the bottom leg.
 
 ### 3. Trend-quality scaling
 
@@ -180,7 +185,7 @@ $R^2$ a clean signal-to-noise measure for compounding trends.
 
 The final per-stock conviction is the product of the two, clipped to $[-1, 1]$:
 
-$$\text{rankconv}_i = \text{clip}\left(\text{rankconv}_i \cdot R^2_i,\ -1,\ 1\right)$$
+$$\text{conviction}_i = \text{clip}\left(c^{\text{rank}}_i \cdot R^2_i,\ -1,\ 1\right)$$
 
 Because the two terms multiply, a name has to be both in the tail of the cross-section
 *and* on a clean trend to earn a meaningful position — either condition weakening damps
