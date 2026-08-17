@@ -14,6 +14,8 @@ stripped out of each stock's returns via PCA, and the leftover idiosyncratic res
 tested for mean-reversion and traded via an Ornstein-Uhlenbeck (OU) framework, in the
 spirit of Avellaneda & Lee (2010). Implementation: [stat_arb.py](stat_arb.py).
 
+The ASX200 is used for this strategy to expand the universe of tradeable assets. As the ASX50 is highly concentrated in specific sectors, PCA pulls out tiny residuals. Thus, only a small amount of stocks are deemed tradeable after running the OU process. 
+
 ### 1. Standardising returns
 
 Daily log returns are computed and standardised (zero mean, unit variance) over a trailing
@@ -21,6 +23,27 @@ Daily log returns are computed and standardised (zero mean, unit variance) over 
 the highest raw volatility:
 
 $$r_{i,t} = \ln\left(\frac{P_{i,t}}{P_{i,t-1}}\right), \qquad z_{i,t} = \frac{r_{i,t} - \bar{r}_i}{\sigma_i}$$
+
+As returns are standardised via EWMA volatility scaling, the following formulas are used to calculate means and volatility for this standardisation. This ensures that the recent regimes are more influential than the window average, which can include events influencing volatility well in the past. 
+
+$$
+\mu_t = (1-\alpha)\mu_{t-1} + \alpha r_t
+$$
+
+$$
+\operatorname{var}_t = (1-\alpha)\operatorname{var}_{t-1}
++ \alpha(r_t-\mu_t)^2
+$$
+
+$$
+z_t = \frac{r_t-\mu_t}{\sqrt{\operatorname{var}_t}}
+$$
+
+where
+
+$$
+\alpha = \frac{2}{\text{vol\_span}+1}
+$$
 
 ### 2. Factor decomposition and residuals
 
@@ -30,7 +53,7 @@ whose cumulative explained variance clears a target threshold $\tau$ (default 55
 
 $$k = \min\left\lbrace k : \sum_{j=1}^{k} \lambda_j \Big/ \sum_{j=1}^{N} \lambda_j \geq \tau \right\rbrace$$
 
-where $\lambda_j$ are the PCA eigenvalues. A fixed $k$ risks either under-fitting 
+where $\lambda_j$ are the PCA eigenvalues. A fixed $k$ risks under-fitting 
 common structure or over-fitting sample noise as the number of names or the fit window
 changes; a variance-explained target adapts to how much real common structure is actually
 present in the current window. The top $k$ components are treated as systematic risk;
@@ -43,7 +66,7 @@ $$\hat{Z} = F W, \qquad \epsilon_{i,t} = Z_{i,t} - \hat{Z}_{i,t}$$
 The daily residual $\epsilon_{i,t}$ is itself stationary by construction (it's already a
 return), so testing it directly for mean-reversion is uninformative. Instead, its
 cumulative sum over the trailing `mr_window` (default 60 days) is treated as a synthetic
-"price" for the idiosyncratic component — this is the object that can actually wander from
+"price" for the idiosyncratic component. This is the object that can actually wander from
 equilibrium and revert:
 
 $$X_{i,t} = \sum_{s=1}^{t} \epsilon_{i,s}$$
@@ -86,9 +109,9 @@ less than one that's strongly significant:
 
 $$\psi(p) = \text{clip}\left(1 - \frac{p}{p_{thresh}},\ 0,\ 1\right)$$
 
-**Half-life fitness**, a triangular weight peaking at the midpoint of
+**Half-life fitness**, a weight peaking at the midpoint of
 `[min_half_life, max_half_life]` and decaying toward the edges of the band, since a
-half-life just inside the boundary is a weaker signal than one near the middle:
+half-life just inside the boundary is a weaker signal than one near the middle. A half-life near the minimum could just be noise, and one near the maximumum will be slower to revert:
 
 $$\chi(h) = \begin{cases} \dfrac{h - h_{min}}{h_{mid} - h_{min}} & h \leq h_{mid} \\[6pt] \dfrac{h_{max} - h}{h_{max} - h_{mid}} & h > h_{mid} \end{cases}$$
 
