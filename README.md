@@ -31,18 +31,18 @@ $$
 $$
 
 $$
-\operatorname{var}_t = (1-\alpha)\operatorname{var}_{t-1}
+var_t = (1-\alpha)var_{t-1}
 + \alpha(r_t-\mu_t)^2
 $$
 
 $$
-z_t = \frac{r_t-\mu_t}{\sqrt{\operatorname{var}_t}}
+z_t = \frac{r_t-\mu_t}{\sqrt{var_t}}
 $$
 
 where
 
 $$
-\alpha = \frac{2}{\text{vol\_span}+1}
+\alpha = \frac{2}{volspan+1}
 $$
 
 ### 2. Factor decomposition and residuals
