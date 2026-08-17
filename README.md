@@ -31,8 +31,7 @@ $$
 $$
 
 $$
-var_t = (1-\alpha)var_{t-1}
-+ \alpha(r_t-\mu_t)^2
+var_t = (1-\alpha)var_{t-1} + \alpha(r_t-\mu_t)^2
 $$
 
 $$
