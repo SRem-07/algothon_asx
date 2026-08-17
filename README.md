@@ -48,7 +48,7 @@ $$
 
 PCA is fit on the standardised return matrix $Z$ (days $\times$ stocks). Rather than fixing
 the number of components $k$, $k$ is chosen as the smallest number of components
-whose cumulative explained variance clears a target threshold $\tau$ (default 55%):
+whose cumulative explained variance clears a target threshold $\tau$ (default 70%):
 
 $$k = \min\left\lbrace k : \sum_{j=1}^{k} \lambda_j \Big/ \sum_{j=1}^{N} \lambda_j \geq \tau \right\rbrace$$
 
@@ -64,7 +64,7 @@ $$\hat{Z} = F W, \qquad \epsilon_{i,t} = Z_{i,t} - \hat{Z}_{i,t}$$
 
 The daily residual $\epsilon_{i,t}$ is itself stationary by construction (it's already a
 return), so testing it directly for mean-reversion is uninformative. Instead, its
-cumulative sum over the trailing `mr_window` (default 60 days) is treated as a synthetic
+cumulative sum over the trailing `mr_window` (default 90 days) is treated as a synthetic
 "price" for the idiosyncratic component. This is the object that can actually wander from
 equilibrium and revert:
 
@@ -152,17 +152,17 @@ and a 10-day rebalance.
 
 ## Strategy 2: Cross-Sectional Momentum
 
-A cross-sectional momentum strategy on the ASX50, exposing the same
-`_signal(price_data) -> pd.Series` interface as the PCA stat-arb book so both strategies
+A cross-sectional momentum strategy on the ASX50, using the same strategy interface as the PCA stat-arb book so both strategies
 plug into a shared risk-engine. 
+
+The ASX50 is used rather than the ASX200 as momentum is single-name, so doesn't require a broad universe of stocks like statistical arbitrage, and worse liquidity on the microcap tail of the ASX200, which can reduce turnover and execution quality, which momentum is sensitive to. 
 
 ### 1. Formation-window return
 
 At each rebalance date, each stock is scored by its total return over a trailing
 `lookback - skip` window that *ends* `skip` days before the rebalance. The most recent
 `skip` days are deliberately dropped to sidestep the well-documented short-term reversal
-effect that contaminates raw 12-month momentum with 1-month noise (Jegadeesh & Titman,
-1993; the classic "12-1" formation window uses `lookback = 252`, `skip = 21`):
+effect that contaminates raw 12-month momentum with 1-month noise:
 
 $$m_{i,t} = \frac{P_{i,\ t - \text{skip}}}{P_{i,\ t - \text{lookback}}} - 1$$
 
@@ -212,9 +212,7 @@ $$\text{conviction}_i = \text{clip}\left(c^{\text{rank}}_i \cdot R^2_i,\ -1,\ 1\
 Because the two terms multiply, a name has to be both in the tail of the cross-section
 *and* on a clean trend to earn a meaningful position — either condition weakening damps
 the conviction rather than forcing a binary in/out call. The output is the same
-`pd.Series[ticker -> conviction in [-1, 1]]` format as the stat-arb signal, so the
-Backtester's `_conviction_to_weights` handles gross-neutral normalisation and per-name
-capping identically for both strategies.
+`pd.Series[ticker -> conviction in [-1, 1]]` format as the stat-arb signal.
 
 ### Backtest
 
